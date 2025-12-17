@@ -12,9 +12,21 @@ This script provides a unified interface for:
 import argparse
 import sys
 import os
+from datetime import datetime
+import numpy as np
 from train import train_model, plot_training_curves, save_results, load_mnist
-from predict import load_model, predict, predict_single, evaluate_predictions, save_model
+from predict import load_model, predict, predict_single, evaluate_predictions, save_model, visualize_samples
 from analysis import measure_backward_performance, scaling_analysis, compute_hessian_eigenvalues, plot_hessian_eigenvalues
+
+
+def _latest_model_path(models_dir: str = "models") -> str | None:
+    """Return the most recently modified .pkl model file in models_dir, else None."""
+    if not os.path.isdir(models_dir):
+        return None
+    pkls = [os.path.join(models_dir, f) for f in os.listdir(models_dir) if f.lower().endswith(".pkl")]
+    if not pkls:
+        return None
+    return max(pkls, key=lambda p: os.path.getmtime(p))
 
 
 def train_command(args):
@@ -29,10 +41,27 @@ def train_command(args):
         print(f"Error: Invalid activation '{activation}'. Choose 'relu' or 'tanh'.")
         return
     
-    # Determine dataset
-    dataset = args.dataset.lower()
-    if dataset not in ['mnist', 'fashion']:
-        print(f"Error: Invalid dataset '{dataset}'. Choose 'mnist' or 'fashion'.")
+    # Determine dataset (interactive prompt if not provided)
+    dataset = args.dataset.lower() if args.dataset else None
+    if dataset is None:
+        print("\nSelect dataset:")
+        print("  1) MNIST handwritten digits")
+        print("  2) Fashion-MNIST")
+        print("  3) CIFAR-10 (grayscale)")
+        try:
+            choice = input("Enter choice (1/2/3): ").strip()
+            dataset_map = {"1": "mnist", "2": "fashion", "3": "cifar10"}
+            dataset = dataset_map.get(choice)
+            if dataset is None:
+                print("Invalid choice. Defaulting to MNIST.")
+                dataset = "mnist"
+        except EOFError:
+            # Non-interactive environment (or no stdin available)
+            print("No input available. Defaulting to MNIST.")
+            dataset = "mnist"
+
+    if dataset not in ['mnist', 'fashion', 'cifar10']:
+        print(f"Error: Invalid dataset '{dataset}'. Choose 'mnist', 'fashion', or 'cifar10'.")
         return
     
     # Train model
@@ -49,14 +78,17 @@ def train_command(args):
     plot_training_curves(results, save_dir=args.plot_dir)
     
     # Save results
-    results_file = f'results_{activation}_{dataset}.json'
+    results_dir = "results"
+    os.makedirs(results_dir, exist_ok=True)
+    results_file = os.path.join(results_dir, f"results_{activation}_{dataset}.json")
     save_results(results, results_file)
     
-    # Save model if requested
-    if args.save_model:
-        model_file = f'model_{activation}_{dataset}.pkl'
-        save_model(results['model'], model_file)
-        print(f"\nModel saved to {model_file}")
+    # Always save model after training (overwrite same file each run)
+    model_dir = "models"
+    os.makedirs(model_dir, exist_ok=True)
+    model_file = os.path.join(model_dir, f"model_{activation}_{dataset}.pkl")
+    save_model(results['model'], model_file)
+    print(f"\nModel saved to {model_file}")
     
     print("\n" + "=" * 70)
     print("TRAINING COMPLETE")
@@ -73,14 +105,22 @@ def predict_command(args):
     print("MAKING PREDICTIONS")
     print("=" * 70)
     
-    # Load model
-    if not os.path.exists(args.model):
-        print(f"Error: Model file '{args.model}' not found.")
+    # Resolve model path (short form: omit --model and use latest saved model)
+    model_path = args.model
+    if model_path is None:
+        model_path = _latest_model_path("models")
+        if model_path is None:
+            print("Error: No saved models found in 'models/'.")
+            print("Train a model first using: python main.py train")
+            return
+
+    if not os.path.exists(model_path):
+        print(f"Error: Model file '{model_path}' not found.")
         print("Train a model first using: python main.py train")
         return
-    
-    print(f"Loading model from {args.model}...")
-    model = load_model(args.model)
+
+    print(f"Loading model from {model_path}...")
+    model = load_model(model_path)
     
     # Load test data
     print("Loading test data...")
@@ -102,14 +142,36 @@ def predict_command(args):
     
     # Show some examples
     if args.show_examples > 0:
-        print(f"\nFirst {args.show_examples} predictions:")
-        for i in range(min(args.show_examples, len(y_test))):
-            pred_class = predictions[i]
-            true_class = y_test[i]
-            confidence = probabilities[i][pred_class]
-            status = "✓" if pred_class == true_class else "✗"
-            print(f"  Sample {i+1}: Predicted={pred_class}, True={true_class}, "
+        n = min(args.show_examples, len(y_test))
+        rng = np.random.default_rng()  # new random samples each run
+        idx = rng.choice(len(y_test), size=n, replace=False)
+
+        print(f"\nRandom {n} predictions:")
+        for j, i in enumerate(idx, start=1):
+            pred_class = int(predictions[i])
+            true_class = int(y_test[i])
+            confidence = float(probabilities[i][pred_class])
+            status = "OK" if pred_class == true_class else "X"
+            print(f"  Sample {j}: Predicted={pred_class}, True={true_class}, "
                   f"Confidence={confidence:.3f} {status}")
+
+        # Save visualization to predicted_images/ with a unique name each run
+        out_dir = "predicted_images"
+        os.makedirs(out_dir, exist_ok=True)
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        out_path = os.path.join(out_dir, f"sample_predictions_{ts}_{n}.png")
+
+        print("\nDisplaying sample images...")
+        visualize_samples(
+            X_test[idx],
+            y_test[idx],
+            predictions[idx],
+            probabilities[idx],
+            n_samples=n,
+            save_path=out_path if n <= 10 else None,
+        )
+        if n <= 10:
+            print(f"Saved visualization to {out_path}")
 
 
 def analyze_command(args):
@@ -210,8 +272,10 @@ def compare_command(args):
     plot_training_curves(results_tanh, save_dir=args.plot_dir)
     
     # Save results
-    save_results(results_relu, f'results_relu_{dataset}.json')
-    save_results(results_tanh, f'results_tanh_{dataset}.json')
+    results_dir = "results"
+    os.makedirs(results_dir, exist_ok=True)
+    save_results(results_relu, os.path.join(results_dir, f"results_relu_{dataset}.json"))
+    save_results(results_tanh, os.path.join(results_dir, f"results_tanh_{dataset}.json"))
     
     # Print comparison
     print("\n" + "=" * 70)
@@ -236,11 +300,12 @@ Examples:
   # Train a ReLU model
   python main.py train --activation relu --epochs 30
 
-  # Train and save model
-  python main.py train --activation tanh --save-model
+  # Train (model is saved automatically into models/)
+  python main.py train --activation tanh
 
   # Make predictions
-  python main.py predict --model model_relu_mnist.pkl
+  python main.py predict
+  python main.py predict --model models/model_relu_mnist.pkl
 
   # Run performance analysis
   python main.py analyze --type performance
@@ -257,9 +322,9 @@ Examples:
     train_parser.add_argument('--activation', type=str, default='relu', 
                              choices=['relu', 'tanh'],
                              help='Activation function (default: relu)')
-    train_parser.add_argument('--dataset', type=str, default='mnist',
-                             choices=['mnist', 'fashion'],
-                             help='Dataset to use (default: mnist)')
+    train_parser.add_argument('--dataset', type=str, default=None,
+                             choices=['mnist', 'fashion', 'cifar10'],
+                             help='Dataset to use (if omitted, you will be prompted)')
     train_parser.add_argument('--epochs', type=int, default=30,
                              help='Number of training epochs (default: 30)')
     train_parser.add_argument('--lr', type=float, default=0.01,
@@ -268,15 +333,13 @@ Examples:
                              help='Batch size (default: 64)')
     train_parser.add_argument('--cv', action='store_true',
                              help='Use cross-validation')
-    train_parser.add_argument('--save-model', action='store_true',
-                             help='Save trained model to file')
     train_parser.add_argument('--plot-dir', type=str, default='plots',
                              help='Directory to save plots (default: plots)')
     
     # Predict command
     predict_parser = subparsers.add_parser('predict', help='Make predictions')
-    predict_parser.add_argument('--model', type=str, required=True,
-                               help='Path to trained model file (.pkl)')
+    predict_parser.add_argument('--model', type=str, default=None,
+                               help="Path to trained model file (.pkl). If omitted, uses latest file in 'models/'.")
     predict_parser.add_argument('--batch-size', type=int, default=64,
                                help='Batch size for prediction (default: 64)')
     predict_parser.add_argument('--show-examples', type=int, default=10,
@@ -302,7 +365,7 @@ Examples:
     # Compare command
     compare_parser = subparsers.add_parser('compare', help='Compare ReLU vs Tanh')
     compare_parser.add_argument('--dataset', type=str, default='mnist',
-                               choices=['mnist', 'fashion'],
+                               choices=['mnist', 'fashion', 'cifar10'],
                                help='Dataset to use (default: mnist)')
     compare_parser.add_argument('--epochs', type=int, default=30,
                                help='Number of training epochs (default: 30)')

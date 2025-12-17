@@ -7,8 +7,8 @@ A complete implementation of automatic differentiation (autograd) engine using o
 This project implements:
 1. **Automatic Differentiation Engine** - Reverse-mode AD with full NumPy compatibility
 2. **Neural Network Training** - MLP with 3 hidden layers (128 neurons each)
-3. **Real Dataset Training** - MNIST handwritten digits classification
-4. **Complete Analysis** - Performance metrics, Hessian computation, activation comparison
+3. **Real Dataset Training** - MNIST / Fashion-MNIST / CIFAR-10 (grayscale)
+4. **Plots & Analysis** - Loss/accuracy curves, LR schedule, overfitting gap, Hessian utilities
 
 ## Restrictions
 
@@ -27,14 +27,16 @@ pip install -r requirements.txt
 
 **Option A: Using main.py (Recommended)**
 ```bash
-# Train a ReLU model
-python main.py train --activation relu --epochs 30
+# Train (you will be prompted to select dataset)
+python main.py train
 
-# Train a Tanh model
-python main.py train --activation tanh --epochs 30 --save-model
+# Train with explicit dataset
+python main.py train --dataset mnist
+python main.py train --dataset fashion
+python main.py train --dataset cifar10
 
-# Compare both activations
-python main.py compare --epochs 30
+# Compare ReLU vs Tanh on a dataset
+python main.py compare --dataset mnist --epochs 30
 ```
 
 **Option B: Using train.py directly**
@@ -43,15 +45,20 @@ python train.py
 ```
 
 This will:
-- Train two models (ReLU and Tanh activations)
-- Generate training curves
-- Save results to JSON files
+- Train a model (or both activations if you call it that way)
+- Generate and save plots to `plots/`
+- Save results JSON into `results/`
+- Save the trained model into `models/`
 
 ### 3. Make Predictions
 
 **Using main.py:**
 ```bash
-python main.py predict --model model_relu_mnist.pkl --show-examples 20
+# Uses the latest model in models/ automatically
+python main.py predict --show-examples 10
+
+# Or specify a model explicitly
+python main.py predict --model models/model_relu_mnist.pkl --show-examples 10
 ```
 
 **Or using Python directly:**
@@ -59,7 +66,7 @@ python main.py predict --model model_relu_mnist.pkl --show-examples 20
 from predict import load_model, predict
 from train import load_mnist
 
-model = load_model('model.pkl')
+model = load_model('models/model_relu_mnist.pkl')
 _, X_test, _, y_test = load_mnist()
 predictions, probs = predict(model, X_test)
 ```
@@ -75,7 +82,7 @@ python main.py analyze --type performance
 python main.py analyze --type scaling
 
 # Hessian eigenvalues
-python main.py analyze --type hessian --model model_relu_mnist.pkl
+python main.py analyze --type hessian --model models/model_relu_mnist.pkl
 ```
 
 **Or using analysis.py directly:**
@@ -94,6 +101,10 @@ Project/
 ├── train.py         # Training script
 ├── predict.py       # Prediction script
 ├── analysis.py      # Performance analysis
+├── models/          # Saved models (.pkl)
+├── results/         # Saved metrics (.json)
+├── plots/           # Saved training plots (.png)
+├── predicted_images/# Saved prediction sample grids (.png)
 ├── requirements.txt # Dependencies
 ├── report.md        # Complete project report
 └── README.md        # This file
@@ -119,11 +130,12 @@ Project/
 - Gradient management
 
 ### Training (`train.py`)
-- MNIST dataset loading
+- MNIST / Fashion-MNIST / CIFAR-10 (grayscale) dataset loading
 - Training loop with validation
 - Learning rate decay
-- Comprehensive visualization
-- Results saving
+- Saves **separate plots** to `plots/`
+- Saves results JSON to `results/`
+- Saves trained model to `models/`
 
 ## Model Architecture
 
@@ -136,10 +148,19 @@ Project/
 ## Results
 
 After training, check:
-- `plots/training_curves_relu_mnist.png` - ReLU training curves
-- `plots/training_curves_tanh_mnist.png` - Tanh training curves
-- `results_relu.json` - ReLU training history
-- `results_tanh.json` - Tanh training history
+- **Plots** (saved separately):
+  - `plots/loss_curves_<activation>_<dataset>.png`
+  - `plots/accuracy_curves_<activation>_<dataset>.png`
+  - `plots/test_loss_<activation>_<dataset>.png`
+  - `plots/test_accuracy_<activation>_<dataset>.png`
+  - `plots/lr_schedule_<activation>_<dataset>.png`
+  - `plots/overfitting_gap_<activation>_<dataset>.png`
+- **Results JSON**:
+  - `results/results_<activation>_<dataset>.json`
+- **Models**:
+  - `models/model_<activation>_<dataset>.pkl` (overwritten each train run)
+- **Prediction visualizations**:
+  - `predicted_images/sample_predictions_*.png`
 
 ## Report
 

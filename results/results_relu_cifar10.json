@@ -1,0 +1,34 @@
+{
+  "train_losses": [
+    2.1528394174575807
+  ],
+  "train_accs": [
+    0.19854166666666667
+  ],
+  "val_losses": [
+    2.034380397796631
+  ],
+  "val_accs": [
+    0.27125
+  ],
+  "test_losses": [
+    2.038871240994287
+  ],
+  "test_accs": [
+    0.27628968253968256
+  ],
+  "best_test_acc": 0.27628968253968256,
+  "best_test_epoch": 1,
+  "total_iterations": 225,
+  "iterations_per_epoch": [
+    225
+  ],
+  "n_params": 165514,
+  "activation": "relu",
+  "dataset": "cifar10",
+  "model_info": {
+    "n_params": 165514,
+    "activation": "relu",
+    "dataset": "cifar10"
+  }
+}
